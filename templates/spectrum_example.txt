@@ -1,0 +1,24 @@
+# Octave-band spectrum: example of @bars and @table
+@field title "Title" "SPECTRUM"
+@field point "Measurement point" "P1"
+@title {title}
+@kv Date | {datetime}
+@kv Point | {point}
+@rule dashed
+@bars unit=dB min=0
+63 Hz = 72.5
+125 Hz = 68
+250 Hz = 61.2
+500 Hz = 58
+1 kHz = 55.4
+2 kHz = 50
+4 kHz = 47.5
+8 kHz = 42
+@end
+@rule dashed
+@table
+Index | dB
+LAeq | 61.3
+LCpeak | 98.2
+@end
+@feed 3

@@ -1,0 +1,22 @@
+# Sound level measurement report, with dotted lines to fill in by hand
+@field instrument "Instrument" "B&K 2231"
+@field operator "Operator"
+@field location "Location"
+@title MEASUREMENT
+@kv Date | {date}
+@kv Time | {time}
+@kv Instrument | {instrument}
+@kv Operator | {operator}
+@kv Location | {location}
+@rule dashed
+@kv LAeq | | .
+@kv LAFmax | | .
+@kv LAFmin | | .
+@rule dashed
+Situation:
+@kv | | .
+@kv | | .
+Remarks:
+@kv | | .
+@kv | | .
+@feed 3

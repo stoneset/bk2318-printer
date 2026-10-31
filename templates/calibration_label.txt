@@ -1,0 +1,21 @@
+# Calibration label for a serviced instrument
+@field instrument "Instrument"
+@field serial "Serial number"
+@field next_due "Next calibration"
+@field by "Calibrated by"
+@field result "Result" "PASS"
+@title CALIBRATED
+@kv Instrument | {instrument}
+@kv S/N | {serial}
+@kv Date | {date}
+@kv Next due | {next_due}
+@kv By | {by}
+@rule full
+@wide on
+@inverse on
+@align center
+{result}
+@inverse off
+@wide off
+@align left
+@feed 3

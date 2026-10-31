@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write          # lets the release step attach the .exe
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r requirements.txt pytest
+      - run: python -m pytest -q
+
+  exe:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name bk2318-printer --add-data "templates;templates" b2318.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bk2318-printer-windows
+          path: dist/bk2318-printer.exe
+      - name: Attach the .exe to a GitHub release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/bk2318-printer.exe --title "${{ github.ref_name }}" --generate-notes
