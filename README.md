@@ -15,7 +15,7 @@ python b2318.py
 
 Use `python -m pip`, not `pip`: otherwise packages may go to another Python ("No module named 'serial'"). The package is `pyserial`, not `serial`.
 
-## Wiring
+## Wiring (cable n°AO 0404 from B&K)
 
 | LEMO (ZI 0054) | PC DB9 | Signal |
 |---|---|---|
@@ -30,6 +30,8 @@ Use `python -m pip`, not `pip`: otherwise packages may go to another Python ("No
 - 4800 baud is about 4× faster for images (DIP switches N1-1 to N1-4, manual 4.1.5).
 
 ## Interface
+
+<img width="862" height="672" alt="python_psqC7AdCf6" src="https://github.com/user-attachments/assets/fc4d1b1a-27de-4bb2-8ab3-32d24fc40c5e" />
 
 Tabs: **Text**, **Templates**, **Charts** (bar chart, lines, calibration), **Image**, **Custom characters** (7×7 glyph editor), **Tools** (character sets, demo page, reset, raw bytes).
 
@@ -75,18 +77,7 @@ UTF-8 text files in `templates/`, editable in any text editor. Import from the T
 
 Example: `templates/measurement_report.txt`.
 
-## Files
-
-| Path | Content |
-|---|---|
-| `b2318.py` | the program |
-| `bk2318-printer.json` | your settings, created next to the program (not in the repo) |
-| `templates/` | text templates |
-| `tests/` | pytest tests, mostly the manual's own byte examples |
-| `build_exe.bat` | build the .exe locally |
-| `.github/workflows/ci.yml` | tests on every push, .exe build, release on `v*` tags |
-
-Release: `git tag v1.11` then `git push origin v1.11`. The .exe is attached to the release automatically.
+<img height="400" alt="IMG_1166" src="https://github.com/user-attachments/assets/8aaf6e78-1186-4c41-be76-5a9eb7802bdd" />
 
 ## Sources
 
