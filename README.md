@@ -16,6 +16,7 @@ python b2318.py
 Use `python -m pip`, not `pip`: otherwise packages may go to another Python ("No module named 'serial'"). The package is `pyserial`, not `serial`.
 
 ## Wiring (cable n°AO 0404 from B&K)
+## Wiring (cable n°AO 0404 from B&K)
 
 | LEMO (ZI 0054) | PC DB9 | Signal |
 |---|---|---|
@@ -30,6 +31,8 @@ Use `python -m pip`, not `pip`: otherwise packages may go to another Python ("No
 - 4800 baud is about 4× faster for images (DIP switches N1-1 to N1-4, manual 4.1.5).
 
 ## Interface
+
+<img width="862" height="672" alt="python_psqC7AdCf6" src="https://github.com/user-attachments/assets/fc4d1b1a-27de-4bb2-8ab3-32d24fc40c5e" />
 
 <img width="862" height="672" alt="python_psqC7AdCf6" src="https://github.com/user-attachments/assets/fc4d1b1a-27de-4bb2-8ab3-32d24fc40c5e" />
 
