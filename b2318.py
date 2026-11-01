@@ -54,7 +54,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-__version__ = "1.11"
+__version__ = "1.12"
 APP_NAME = "bk2318-printer"
 PROJECT_URL = "https://github.com/stoneset/bk2318-printer"     # repository address (About box)
 
@@ -119,8 +119,12 @@ PDI_DOTS = 0x2A         # + 2 bytes: one column of 7 dots
 PDI_BAR = {("wide", "filled"): 0x30, ("narrow", "filled"): 0x31,
            ("wide", "hatched"): 0x32, ("narrow", "hatched"): 0x33,
            ("wide", "outline"): 0x34, ("narrow", "outline"): 0x35}
-# 0x21 and 0x22 exist (one of them is SCLE, the relative-length scale) but their
-# description is unreadable in the scan: Printer.pdi_raw() lets you experiment.
+# Other PDI codes from the table in the appendix (p. 64), read by saschapo:
+# 0x21 COT, 0x22 CEL, 0x23 CER, 0x27 SCLE (scale), 0x2F BK. Their parameters are not
+# described in the text; Printer.pdi_raw() lets you experiment.
+DEFAULT_SCALE_DOTS = 162  # relative length 1.0 at power-up: 165 - origin (3) dots
+DEFAULT_ASPECT = 1.95     # line pitch 3.94 mm / printed height 2.0 mm (measured by saschapo)
+TITLE_STYLES = ("wide-inverse", "inverse", "wide", "framed")
 LINE_TYPES = {"full": 0, "dotted": 1, "dashed": 2, "dotdash": 3}
 DOTS = 168              # dots per line
 CHAR_DOTS = 7           # width of a normal character, in dots
@@ -268,13 +272,15 @@ class Printer:
     """Builds the byte stream for the 2318. Nothing is sent here:
     take() returns the bytes, to be transmitted with Link.send()."""
 
-    def __init__(self, mode="auto", prefer=None, glyphs=None, scale_px=None, aspect=1.5):
+    def __init__(self, mode="auto", prefer=None, glyphs=None, scale_px=DEFAULT_SCALE_DOTS,
+                 aspect=DEFAULT_ASPECT, title_style="wide-inverse"):
         self.mode = mode                      # "auto" (Unicode, set switching) or "ascii"
         self.prefer = [p for p in (prefer or DEFAULT_PREFER) if p in ALT]
         self.glyphs = dict(BUILTIN_GLYPHS)
         self.glyphs.update(glyphs or {})
         self.scale_px = scale_px              # dots for a relative length of 1.0
         self.aspect = aspect                  # line pitch / printed height (images)
+        self.title_style = title_style
         self.buf = bytearray()
         self._power_up_state()
 
@@ -550,10 +556,20 @@ class Printer:
                 out.append(s)
         return out
 
-    def title(self, text):
-        """Banner: double width, inverse video, centered."""
+    def title(self, text, style=None):
+        """Centered banner. Styles: wide-inverse (default), inverse (normal width,
+        easier to read), wide (no inverse), framed (wide text between two hatched
+        bars; inverse video does not apply to graphics)."""
+        style = style or self.title_style
+        if style not in TITLE_STYLES:
+            raise ValueError(f"banner style: {', '.join(TITLE_STYLES)}")
         state = (self.is_wide, self.is_inverse, self.alignment)
-        self.wide(True).inverse(True).align("center").line(text)
+        if style == "framed":
+            self.band(_bar_masks(DOTS, "wide", "hatched"))
+        self.wide(style != "inverse").inverse(style in ("wide-inverse", "inverse"))
+        self.align("center").line(text)
+        if style == "framed":
+            self.band(_bar_masks(DOTS, "wide", "hatched"))
         self.wide(state[0]).inverse(state[1]).align(state[2])
         return self
 
@@ -898,6 +914,14 @@ def demo_page(p):
     p.rule("full")
 
 
+def banner_samples(p):
+    """The four banner styles, to pick the most readable one."""
+    for style in TITLE_STYLES:
+        p.line(f"Banner style: {style}")
+        p.title("B&K 2318", style)
+        p.feed(1)
+
+
 def calibration_page(p):
     """Page to measure the native bar scale and the line spacing."""
     p.title("CALIBRATION")
@@ -965,6 +989,10 @@ class PreviewPrinter(Printer):
 
     def rule(self, kind="dashed", row=4, newline=True):
         self.out.append((self.RULES[kind], False))
+        return self
+
+    def band(self, masks, newline=True):
+        self.out.append(("\u2592" * 24 if any(masks) else "", False))
         return self
 
     def bar_chart(self, items, vmin=None, vmax=None, unit="", *args, **kw):
@@ -1312,6 +1340,9 @@ class Link:
         self.activity += 1
         if self.xonxoff:
             for byte in data:
+                # In 7-bit data mode the printer sends 7 data bits: read as 8N1, its stop
+                # bit becomes bit 7, so XOFF/XON arrive as 0x93/0x91 (found by saschapo).
+                byte &= 0x7F
                 if byte == XOFF:
                     self.paused = True
                 elif byte == XON:
@@ -1511,7 +1542,8 @@ def diagnose(port, baud, send_test=True):
 
     def describe(rx):
         names = {XON: "XON (ready)", XOFF: "XOFF (buffer full)"}
-        return " ".join(names.get(b, f"{b:02X}") for b in rx) or "nothing"
+        return " ".join(f"{b:02X}" + (f" = {names[b & 0x7F]}" if b & 0x7F in names else "")
+                        for b in rx) or "nothing"
 
     def fmt(st):
         if st is None:
@@ -1557,9 +1589,12 @@ def _config_path():
 
 CONFIG_PATH = _config_path()
 LEGACY_CONFIG = Path.home() / ".b2318.json"           # location used up to version 1.7
-DEFAULT_CONFIG = {"port": "", "baud": 1200, "xonxoff": True, "rtscts": False, "mode": "auto",
-                  "prefer": DEFAULT_PREFER, "scale_px": None, "aspect": 1.5,
-                  "lines_per_second": LINES_PER_SECOND, "glyphs": {}}
+CONFIG_VERSION = 2
+DEFAULT_CONFIG = {"config_version": CONFIG_VERSION, "port": "", "baud": 1200, "xonxoff": True,
+                  "rtscts": False, "mode": "auto", "prefer": DEFAULT_PREFER,
+                  "scale_px": DEFAULT_SCALE_DOTS, "aspect": DEFAULT_ASPECT,
+                  "lines_per_second": LINES_PER_SECOND, "title_style": "wide-inverse",
+                  "glyphs": {}}
 
 
 def load_config():
@@ -1569,9 +1604,17 @@ def load_config():
     if migrate:
         path = LEGACY_CONFIG
     try:
-        cfg.update(json.loads(path.read_text(encoding="utf-8")))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return cfg
+    cfg.update(data)
+    if data.get("config_version", 1) < 2:             # old defaults replaced by measured ones
+        if cfg.get("aspect") == 1.5:
+            cfg["aspect"] = DEFAULT_ASPECT
+        if not cfg.get("scale_px"):
+            cfg["scale_px"] = DEFAULT_SCALE_DOTS
+        cfg["config_version"] = CONFIG_VERSION
+        migrate = True
     if migrate and save_config(cfg):                  # moved next to the program
         try:
             LEGACY_CONFIG.unlink()
@@ -1597,7 +1640,8 @@ def save_config(cfg):
 def make_printer(args, cfg):
     return Printer(mode="ascii" if getattr(args, "ascii", False) else cfg["mode"],
                    prefer=cfg["prefer"], glyphs=cfg["glyphs"],
-                   scale_px=cfg["scale_px"], aspect=cfg["aspect"])
+                   scale_px=cfg["scale_px"], aspect=cfg["aspect"],
+                   title_style=cfg.get("title_style", "wide-inverse"))
 
 
 def resolve_port(args, cfg):
@@ -1881,8 +1925,9 @@ def cmd_config(args, cfg):
         print(json.dumps(cfg, indent=2, ensure_ascii=False))
         return
     key = args.key
-    if key not in DEFAULT_CONFIG or key == "glyphs":
-        sys.exit(f"Possible keys: {', '.join(k for k in DEFAULT_CONFIG if k != 'glyphs')}")
+    hidden = ("glyphs", "config_version")
+    if key not in DEFAULT_CONFIG or key in hidden:
+        sys.exit(f"Possible keys: {', '.join(k for k in DEFAULT_CONFIG if k not in hidden)}")
     if args.value is None:
         print(cfg.get(key))
         return
@@ -1898,6 +1943,8 @@ def cmd_config(args, cfg):
             v = float(v.replace(",", "."))
         elif key == "mode" and v not in ("auto", "ascii"):
             raise ValueError("auto or ascii")
+        elif key == "title_style" and v not in TITLE_STYLES:
+            raise ValueError(", ".join(TITLE_STYLES))
         elif key == "prefer":
             v = [x.strip() for x in v.split(",") if x.strip()]
             bad = [x for x in v if x not in ALT]
@@ -2318,7 +2365,8 @@ def run_gui():
 
     def make(cls=Printer):
         return cls(mode=V["mode"].get(), prefer=cfg["prefer"], glyphs=cfg["glyphs"],
-                   scale_px=cfg["scale_px"], aspect=cfg["aspect"])
+                   scale_px=cfg["scale_px"], aspect=cfg["aspect"],
+                   title_style=cfg.get("title_style", "wide-inverse"))
 
     def preview_widget(parent):
         w = tk.Text(parent, width=28, height=22, font=mono, state="disabled", wrap="none",
@@ -2529,6 +2577,18 @@ def run_gui():
     e = ttk.Entry(opts2, textvariable=V["ttl"], width=14)
     e.pack(side="left", padx=4)
     e.bind("<KeyRelease>", refresh)
+    var("tstyle", cfg.get("title_style", "wide-inverse"))
+
+    def set_title_style(_event=None):
+        cfg["title_style"] = V["tstyle"].get()
+        save_config(cfg)
+        refresh()
+        tpl_refresh()
+
+    cb = ttk.Combobox(opts2, textvariable=V["tstyle"], values=list(TITLE_STYLES), width=12,
+                      state="readonly")
+    cb.pack(side="left", padx=(4, 0))
+    cb.bind("<<ComboboxSelected>>", set_title_style)
 
     ttk.Button(opts2, text="Print", command=lambda: submit(text_job(), "Text")).pack(side="right")
     ttk.Button(opts2, text="Paper feed",
@@ -2989,6 +3049,8 @@ def run_gui():
                command=lambda: submit(lambda p: [p.sample(n).feed(1) for n in TEXT_SETS],
                                       "Tables")).pack(side="left", padx=4)
     ttk.Button(fr, text="Demo page", command=lambda: submit(demo_page, "Demo")
+               ).pack(side="left", padx=4)
+    ttk.Button(fr, text="Banner styles", command=lambda: submit(banner_samples, "Banners")
                ).pack(side="left", padx=4)
 
     fr = ttk.LabelFrame(tab, text="Commands", padding=6)

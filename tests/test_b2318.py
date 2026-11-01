@@ -115,7 +115,9 @@ def test_bar_chart():
                               scale_px=160)
     # min and max entered the wrong way round still give bars
     d = out(lambda p: p.bar_chart([("a", 50)], vmin=100, vmax=0, axis=False))
-    assert d.count(b"\x2a") > 10
+    assert b"\x0e\x30" in d                    # native bar, default scale 162 dots
+    d = out(lambda p: p.bar_chart([("a", 50)], vmin=100, vmax=0, axis=False, native=False))
+    assert d.count(b"\x2a") > 10                # same bar drawn dot by dot
 
 
 def test_strip_chart():
@@ -133,7 +135,7 @@ def test_image():
     ImageDraw.Draw(im).ellipse((20, 10, 280, 140), fill=0)
     p = Printer()
     bw = p.prepare_image(im, dither=False)
-    assert bw.size == (168, round(150 * 168 / 300 / 1.5))
+    assert bw.size == (168, round(150 * 168 / 300 / b.DEFAULT_ASPECT))
     p.bitmap(bw)
     assert p.take().count(b"\r") == (bw.size[1] + 6) // 7
 
@@ -293,7 +295,7 @@ def test_old_settings_are_moved(monkeypatch, tmp_path):
     monkeypatch.setattr(b, "CONFIG_PATH", new)
     monkeypatch.setattr(b, "LEGACY_CONFIG", old)
     cfg = b.load_config()
-    assert cfg["port"] == "COM4" and cfg["baud"] == 4800 and cfg["aspect"] == 1.5
+    assert cfg["port"] == "COM4" and cfg["baud"] == 4800 and cfg["aspect"] == b.DEFAULT_ASPECT
     assert new.is_file() and not old.exists()
 
 
@@ -306,3 +308,41 @@ def test_soft_reset_restores_power_up_sets_without_nsr():
     assert d == b"\x0f\x1b(B\x1b-W\x1b*K\x1b/{\x1bL\x1bI\x1b&<"
     assert p.g == b.POWER_UP_G and p.gl == 0 and not p.is_wide and p.alignment == "left"
     assert out(lambda q: (q.soft_reset(), q.line("Σ")))[-3:] == b"\x19\x72\r"   # Greek in G2 again
+
+
+def test_xon_xoff_from_a_7_bit_printer():
+    """7 data bits read as 8N1: the stop bit becomes bit 7 (0x93 / 0x91)."""
+    import os
+    import time
+    link, master, got = _pty_link(1200)
+    os.write(master, b"\x93")
+    time.sleep(0.05)
+    link.poll_rx()
+    assert link.paused
+    os.write(master, b"\x91")
+    time.sleep(0.05)
+    link.poll_rx()
+    assert not link.paused
+    link.close()
+
+
+@pytest.mark.parametrize("style", b.TITLE_STYLES)
+def test_banner_styles(style):
+    d = out(lambda p: p.title("T", style))
+    assert b"T" in d
+    assert (b"\x1bH" in d) == (style in ("wide-inverse", "inverse"))
+    assert (b"\x1bK" in d) == (style != "inverse")
+    assert (b"\x0e" in d) == (style == "framed")            # hatched bars around the text
+    with pytest.raises(ValueError):
+        Printer().title("T", "bold")
+
+
+def test_old_settings_get_measured_defaults(monkeypatch, tmp_path):
+    import json
+    path = tmp_path / "bk2318-printer.json"
+    path.write_text(json.dumps({"port": "COM4", "aspect": 1.5, "scale_px": None}), encoding="utf-8")
+    monkeypatch.setattr(b, "CONFIG_PATH", path)
+    cfg = b.load_config()
+    assert cfg["aspect"] == b.DEFAULT_ASPECT and cfg["scale_px"] == b.DEFAULT_SCALE_DOTS
+    assert cfg["port"] == "COM4"
+    assert json.loads(path.read_text(encoding="utf-8"))["config_version"] == 2
